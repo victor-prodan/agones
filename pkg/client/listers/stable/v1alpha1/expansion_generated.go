@@ -34,6 +34,14 @@ type FleetAllocationListerExpansion interface{}
 // FleetAllocationNamespaceLister.
 type FleetAllocationNamespaceListerExpansion interface{}
 
+// FleetAutoScalerListerExpansion allows custom methods to be added to
+// FleetAutoScalerLister.
+type FleetAutoScalerListerExpansion interface{}
+
+// FleetAutoScalerNamespaceListerExpansion allows custom methods to be added to
+// FleetAutoScalerNamespaceLister.
+type FleetAutoScalerNamespaceListerExpansion interface{}
+
 // GameServerListerExpansion allows custom methods to be added to
 // GameServerLister.
 type GameServerListerExpansion interface{}
