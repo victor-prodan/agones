@@ -27,6 +27,7 @@ import (
 	"agones.dev/agones/pkg/client/clientset/versioned"
 	"agones.dev/agones/pkg/client/informers/externalversions"
 	"agones.dev/agones/pkg/fleetallocation"
+	"agones.dev/agones/pkg/fleetautoscalers"
 	"agones.dev/agones/pkg/fleets"
 	"agones.dev/agones/pkg/gameservers"
 	"agones.dev/agones/pkg/gameserversets"
@@ -97,7 +98,10 @@ func main() {
 		kubeClient, extClient, agonesClient, agonesInformerFactory)
 	fleetController := fleets.NewController(wh, health,
 		kubeClient, extClient, agonesClient, agonesInformerFactory)
-	faController := fleetallocation.NewController(wh, kubeClient, extClient, agonesClient, agonesInformerFactory)
+	faController := fleetallocation.NewController(wh,
+		kubeClient, extClient, agonesClient, agonesInformerFactory)
+	fasController := fleetautoscalers.NewController(wh, health,
+		kubeClient, extClient, agonesClient, agonesInformerFactory)
 
 	stop := signals.NewStopChannel()
 
@@ -105,7 +109,7 @@ func main() {
 	agonesInformerFactory.Start(stop)
 
 	rs := []runner{
-		wh, gsController, gsSetController, fleetController, faController, healthServer{handler: health},
+		wh, gsController, gsSetController, fleetController, faController, fasController, healthServer{handler: health},
 	}
 	for _, r := range rs {
 		go func(rr runner) {
