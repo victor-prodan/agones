@@ -17,6 +17,7 @@ package fleetautoscalers
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"agones.dev/agones/pkg/apis/stable"
 	stablev1alpha1 "agones.dev/agones/pkg/apis/stable/v1alpha1"
@@ -24,7 +25,6 @@ import (
 	getterv1alpha1 "agones.dev/agones/pkg/client/clientset/versioned/typed/stable/v1alpha1"
 	"agones.dev/agones/pkg/client/informers/externalversions"
 	listerv1alpha1 "agones.dev/agones/pkg/client/listers/stable/v1alpha1"
-	//	"agones.dev/agones/pkg/fleets"
 	"agones.dev/agones/pkg/util/crd"
 	"agones.dev/agones/pkg/util/runtime"
 	"agones.dev/agones/pkg/util/webhooks"
@@ -37,6 +37,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	extclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/typed/apiextensions/v1beta1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -72,12 +73,12 @@ func NewController(
 	fasInformer := agonesInformer.FleetAutoScalers().Informer()
 
 	c := &Controller{
-		crdGetter:              extClient.ApiextensionsV1beta1().CustomResourceDefinitions(),
-		fleetGetter:            agonesClient.StableV1alpha1(),
-		fleetLister:            agonesInformer.Fleets().Lister(),
-		fleetAutoScalerGetter:  agonesClient.StableV1alpha1(),
-		fleetAutoScalerLister:  agonesInformer.FleetAutoScalers().Lister(),
-		fleetAutoScalerSynced:  fasInformer.HasSynced,
+		crdGetter:             extClient.ApiextensionsV1beta1().CustomResourceDefinitions(),
+		fleetGetter:           agonesClient.StableV1alpha1(),
+		fleetLister:           agonesInformer.Fleets().Lister(),
+		fleetAutoScalerGetter: agonesClient.StableV1alpha1(),
+		fleetAutoScalerLister: agonesInformer.FleetAutoScalers().Lister(),
+		fleetAutoScalerSynced: fasInformer.HasSynced,
 	}
 	c.logger = runtime.NewLoggerWithType(c)
 	c.workerqueue = workerqueue.NewWorkerQueue(c.syncFleetAutoScaler, c.logger, stable.GroupName+".FleetAutoScalerController")
@@ -90,7 +91,6 @@ func NewController(
 
 	kind := stablev1alpha1.Kind("FleetAutoScaler")
 	wh.AddHandler("/mutate", kind, admv1beta1.Create, c.creationMutationHandler)
-	wh.AddHandler("/validate", kind, admv1beta1.Create, c.creationValidationHandler)
 	wh.AddHandler("/validate", kind, admv1beta1.Update, c.mutationValidationHandler)
 
 	fasInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -155,17 +155,27 @@ func (c *Controller) creationMutationHandler(review admv1beta1.AdmissionReview) 
 	fleet, err := c.fleetLister.Fleets(review.Request.Namespace).Get(fas.Spec.FleetName)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
-			logrus.WithError(err).WithField("fleetName", fas.Name).
-				WithField("namespace", review.Request.Namespace).
-				Warn("Could not find fleet for allocation. Skipping.")
+			review.Response.Allowed = false
+			review.Response.Result = &metav1.Status{
+				Status:  metav1.StatusFailure,
+				Reason:  metav1.StatusReasonInvalid,
+				Message: "Invalid FleetAutoScaler",
+				Details: &metav1.StatusDetails{
+					Name:  review.Request.Name,
+					Group: review.Request.Kind.Group,
+					Kind:  review.Request.Kind.Kind,
+					Causes: []metav1.StatusCause{
+						{Type: metav1.CauseTypeFieldValueNotFound,
+							Message: fmt.Sprintf("Could not find fleet %s in namespace %s", fas.Spec.FleetName, review.Request.Namespace),
+							Field:   "fleetName"}},
+				},
+			}
 			return review, nil
 		}
 		return review, errors.Wrapf(err, "error retrieving fleet %s", fas.Name)
 	}
 
 	// Attach to the fleet
-	fas.Status = stablev1alpha1.FleetAutoScalerStatus{Fleet: fleet}
-	
 	// When a Fleet is deleted, the FleetAutoScaler should go with it
 	ref := metav1.NewControllerRef(fleet, stablev1alpha1.SchemeGroupVersion.WithKind("Fleet"))
 	fas.ObjectMeta.OwnerReferences = append(fas.ObjectMeta.OwnerReferences, *ref)
@@ -198,40 +208,6 @@ func (c *Controller) creationMutationHandler(review admv1beta1.AdmissionReview) 
 	return review, nil
 }
 
-// creationValidationHandler intercepts the creation of a FleetAutoScaler, and if there is
-// no Status > Fleet set, then we will assume that the Spec > fleetName is invalid
-func (c *Controller) creationValidationHandler(review admv1beta1.AdmissionReview) (admv1beta1.AdmissionReview, error) {
-	c.logger.WithField("review", review).Info("creationValidationHandler")
-	obj := review.Request.Object
-	fas := &stablev1alpha1.FleetAutoScaler{}
-	if err := json.Unmarshal(obj.Raw, fas); err != nil {
-		return review, errors.Wrapf(err, "error unmarshalling original FleetAutoScaler json: %s", obj.Raw)
-	}
-
-	// If there is no Fleet, we are assuming that is
-	// because the fleetName is invalid. Any other error
-	// option should be handled by the creationMutationHandler
-	if fas.Status.Fleet == nil {
-		review.Response.Allowed = false
-		review.Response.Result = &metav1.Status{
-			Status:  metav1.StatusFailure,
-			Reason:  metav1.StatusReasonInvalid,
-			Message: "Invalid FleetAutoScaler",
-			Details: &metav1.StatusDetails{
-				Name:  review.Request.Name,
-				Group: review.Request.Kind.Group,
-				Kind:  review.Request.Kind.Kind,
-				Causes: []metav1.StatusCause{
-					{Type: metav1.CauseTypeFieldValueNotFound,
-						Message: fmt.Sprintf("Could not find fleet %s in namespace %s", fas.Spec.FleetName, review.Request.Namespace),
-						Field:   "fleetName"}},
-			},
-		}
-	}
-
-	return review, nil
-}
-
 // mutationValidationHandler stops edits from happening to a
 // FleetAutoScaler fleetName value
 func (c *Controller) mutationValidationHandler(review admv1beta1.AdmissionReview) (admv1beta1.AdmissionReview, error) {
@@ -248,7 +224,7 @@ func (c *Controller) mutationValidationHandler(review admv1beta1.AdmissionReview
 		return review, errors.Wrapf(err, "error unmarshalling old FleetAutoScaler json: %s", review.Request.Object.Raw)
 	}
 
-	causes := oldFS.ValidateUpdate(newFS, nil);
+	causes := oldFS.ValidateUpdate(newFS, nil)
 	if len(causes) != 0 {
 		review.Response.Allowed = false
 		details := metav1.StatusDetails{
@@ -288,7 +264,7 @@ func (c *Controller) syncFleetAutoScaler(key string) error {
 		}
 		return errors.Wrapf(err, "error retrieving FleetAutoScaler %s from namespace %s", name, namespace)
 	}
-	
+
 	// Retrieve the fleet by spec name
 	fleet, err := c.fleetLister.Fleets(namespace).Get(fas.Spec.FleetName)
 	if err != nil {
@@ -299,21 +275,20 @@ func (c *Controller) syncFleetAutoScaler(key string) error {
 				Warn("Could not find fleet for autoscaler. Skipping.")
 			return errors.Wrapf(err, "fleet %s not found in namespace %s", fas.Spec.FleetName, namespace)
 		}
+		c.updateStatusUnableToScale(fas)
 		return errors.Wrapf(err, "error retrieving fleet %s from namespace %s", fas.Spec.FleetName, namespace)
 	}
 
-	// Q: too verbose?
-	c.logger.WithField("fleetautoscaler", fas.ObjectMeta.Name).Info(fmt.Sprintf("Fleet spec replicas %d, Status: Replicas %d Ready %d Allocated %d", fleet.Spec.Replicas, fleet.Status.Replicas, fleet.Status.ReadyReplicas, fleet.Status.AllocatedReplicas))
-	
-	replicas := computeDesiredFleetSize(fas, fleet)
-	
+	currentReplicas := fleet.Status.Replicas
+	desiredReplicas, scalingLimited := computeDesiredFleetSize(fas, fleet)
+
 	// Scale the fleet to the new size
-	err = c.scaleFleet(fas, fleet, replicas)
+	err = c.scaleFleet(fas, fleet, desiredReplicas)
 	if err != nil {
-		return errors.Wrapf(err, "error autoscaling fleet %s to %d replicas", fas.Spec.FleetName, replicas)
+		return errors.Wrapf(err, "error autoscaling fleet %s to %d replicas", fas.Spec.FleetName, desiredReplicas)
 	}
-	
-	return c.updateFleetCopy(fas, fleet)
+
+	return c.updateStatus(fas, currentReplicas, desiredReplicas, desiredReplicas != fleet.Spec.Replicas, scalingLimited)
 }
 
 // scaleFleet scales the fleet of the autoscaler to a new number of replicas
@@ -325,7 +300,7 @@ func (c *Controller) scaleFleet(fas *stablev1alpha1.FleetAutoScaler, f *stablev1
 		if err != nil {
 			return errors.Wrapf(err, "error updating replicas for fleet %s", f.ObjectMeta.Name)
 		}
-		
+
 		c.recorder.Eventf(fas, corev1.EventTypeNormal, "AutoScalingFleet",
 			"Scaling fleet %s from %d to %d", fCopy.ObjectMeta.Name, f.Spec.Replicas, fCopy.Spec.Replicas)
 	}
@@ -333,14 +308,43 @@ func (c *Controller) scaleFleet(fas *stablev1alpha1.FleetAutoScaler, f *stablev1
 	return nil
 }
 
-// updateFleetCopy updates the Fleet copy from the FleetAutoScaler Status
-func (c *Controller) updateFleetCopy(fas *stablev1alpha1.FleetAutoScaler, f *stablev1alpha1.Fleet) error {
+// updateStatus updates the status of the given FleetAutoScaler
+func (c *Controller) updateStatus(fas *stablev1alpha1.FleetAutoScaler, currentReplicas int32, desiredReplicas int32, scaled bool, scalingLimited bool) error {
 	// Q: can we detect and update only when fleet data is changed?
 	fasCopy := fas.DeepCopy()
-	fasCopy.Status.Fleet = f
-	_, err := c.fleetAutoScalerGetter.FleetAutoScalers(fas.ObjectMeta.Namespace).Update(fasCopy)
-	if err != nil {
-		return errors.Wrapf(err, "error updating replicas for fleet %s", fas.ObjectMeta.Name)
+	fasCopy.Status.AbleToScale = true
+	fasCopy.Status.ScalingLimited = scalingLimited
+	fasCopy.Status.CurrentReplicas = currentReplicas
+	fasCopy.Status.DesiredReplicas = desiredReplicas
+	if scaled {
+		now := metav1.NewTime(time.Now())
+		fasCopy.Status.LastScaleTime = &now
+	}
+
+	if !apiequality.Semantic.DeepEqual(fas.Status, fasCopy.Status) {
+		_, err := c.fleetAutoScalerGetter.FleetAutoScalers(fas.ObjectMeta.Namespace).Update(fasCopy)
+		if err != nil {
+			return errors.Wrapf(err, "error updating status for fleetautoscaler %s", fas.ObjectMeta.Name)
+		}
+	}
+
+	return nil
+}
+
+// updateStatus updates the status of the given FleetAutoScaler in the case we're not able to scale
+func (c *Controller) updateStatusUnableToScale(fas *stablev1alpha1.FleetAutoScaler) error {
+	// Q: can we detect and update only when fleet data is changed?
+	fasCopy := fas.DeepCopy()
+	fasCopy.Status.AbleToScale = false
+	fasCopy.Status.ScalingLimited = false
+	fasCopy.Status.CurrentReplicas = 0
+	fasCopy.Status.DesiredReplicas = 0
+
+	if !apiequality.Semantic.DeepEqual(fas.Status, fasCopy.Status) {
+		_, err := c.fleetAutoScalerGetter.FleetAutoScalers(fas.ObjectMeta.Namespace).Update(fasCopy)
+		if err != nil {
+			return errors.Wrapf(err, "error updating status for fleetautoscaler %s", fas.ObjectMeta.Name)
+		}
 	}
 
 	return nil

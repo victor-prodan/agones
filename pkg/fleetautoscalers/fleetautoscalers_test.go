@@ -28,28 +28,32 @@ func TestComputeDesiredFleetSize(t *testing.T) {
 	fas, f := defaultFixtures()
 
 	fas.Spec.BufferSize = 20
+	fas.Spec.MaxReplicas = 100
 	f.Spec.Replicas = 50
 	f.Status.Replicas = f.Spec.Replicas
 	f.Status.AllocatedReplicas = 40
 	f.Status.ReadyReplicas = 10
-	
-	replicas := computeDesiredFleetSize(fas, f)
+
+	replicas, limited := computeDesiredFleetSize(fas, f)
 	assert.Equal(t, replicas, int32(60))
-	
+	assert.Equal(t, limited, false)
+
 	fas.Spec.MinReplicas = 65
 	f.Spec.Replicas = 50
 	f.Status.Replicas = f.Spec.Replicas
 	f.Status.AllocatedReplicas = 40
 	f.Status.ReadyReplicas = 10
-	replicas = computeDesiredFleetSize(fas, f)
+	replicas, limited = computeDesiredFleetSize(fas, f)
 	assert.Equal(t, replicas, int32(65))
-	
+	assert.Equal(t, limited, true)
+
 	fas.Spec.MinReplicas = 0
 	fas.Spec.MaxReplicas = 55
 	f.Spec.Replicas = 50
 	f.Status.Replicas = f.Spec.Replicas
 	f.Status.AllocatedReplicas = 40
 	f.Status.ReadyReplicas = 10
-	replicas = computeDesiredFleetSize(fas, f)
+	replicas, limited = computeDesiredFleetSize(fas, f)
 	assert.Equal(t, replicas, int32(55))
+	assert.Equal(t, limited, true)
 }

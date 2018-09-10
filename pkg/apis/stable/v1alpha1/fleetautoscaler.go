@@ -42,31 +42,46 @@ type FleetAutoScalerList struct {
 // FleetAutoScalerSpec is the spec for a Fleet Scaler
 type FleetAutoScalerSpec struct {
 	FleetName string `json:"fleetName"`
-	// MaxReplicas is the maximum amount of replicas that the fleet may have. 
-	// If zero, it is ignored. 
-	// If non zero, it must be bigger than both MinReplicas and BufferSize
+	// MaxReplicas is the maximum amount of replicas that the fleet may have.
+	// It must be bigger than both MinReplicas and BufferSize
 	MaxReplicas int32 `json:"maxReplicas"`
-	
+
 	// MinReplicas is the minimum amount of replicas that the fleet must have
-	// If zero, it is ignored. 
+	// If zero, it is ignored.
 	// If non zero, it must be smaller than MaxReplicas and bigger than BufferSize
-	MinReplicas int32 `json:"minReplicas"`
-	
+	MinReplicas int32 `json:"minReplicas,omitempty"`
+
 	// BufferSize defines how many replicas the autoscaler tries to have ready all the time
 	// Must be bigger than 0
-	// Note: by "ready" we understand in this case "non-allocated"; this is done to ensure robustness 
+	// Note: by "ready" we understand in this case "non-allocated"; this is done to ensure robustness
 	//       and computation stability in different edge case (fleet just created, not enough capacity in the cluster etc)
 	BufferSize int32 `json:"bufferSize"`
 }
 
 // FleetAutoScalerStatus needs doc
 type FleetAutoScalerStatus struct {
-	// Fleet is the copy of fleet we're attached to. It is updated each tick
-	Fleet *Fleet
+	// CurrentReplicas is the current number of gameserver replicas
+	// of the fleet managed by this autoscaler, as last seen by the autoscaler
+	CurrentReplicas int32 `json:"currentReplicas"`
+
+	// DesiredReplicas is the desired number of gameserver replicas
+	// of the fleet managed by this autoscaler, as last calculated by the autoscaler
+	DesiredReplicas int32 `json:"currentReplicas"`
+
+	// lastScaleTime is the last time the FleetAutoScaler scaled the attached fleet,
+	// +optional
+	LastScaleTime *metav1.Time `json:"lastScaleTime,omitempty"`
+
+	// AbleToScale indicates that we can access the target fleet
+	AbleToScale bool `json:"ableToScale,omitempty"`
+
+	// ScalingLimited indicates that the calculated scale would be above or below the range
+	// defined by MinReplicas and MaxReplicas, and has thus been capped.
+	ScalingLimited bool `json:"scalingLimited,omitempty"`
 }
 
 // ValidateUpdate validates when an update occurs
-func (fas *FleetAutoScaler) ValidateUpdate(new *FleetAutoScaler, causes []metav1.StatusCause) ([]metav1.StatusCause) {
+func (fas *FleetAutoScaler) ValidateUpdate(new *FleetAutoScaler, causes []metav1.StatusCause) []metav1.StatusCause {
 	if fas.Spec.FleetName != new.Spec.FleetName {
 		causes = append(causes, metav1.StatusCause{
 			Type:    metav1.CauseTypeFieldValueInvalid,
@@ -74,13 +89,13 @@ func (fas *FleetAutoScaler) ValidateUpdate(new *FleetAutoScaler, causes []metav1
 			Message: "fleetName cannot be updated",
 		})
 	}
-	
+
 	return new.ValidateAutoScalingSettings(causes)
 }
 
 //ValidateAutoScalingSettings validates the FleetAutoScaler scaling settings
-func (fas *FleetAutoScaler) ValidateAutoScalingSettings(causes []metav1.StatusCause) ([]metav1.StatusCause) {
-	if fas.Spec.MinReplicas != 0 && fas.Spec.MaxReplicas != 0 && fas.Spec.MinReplicas > fas.Spec.MaxReplicas {
+func (fas *FleetAutoScaler) ValidateAutoScalingSettings(causes []metav1.StatusCause) []metav1.StatusCause {
+	if fas.Spec.MinReplicas != 0 && fas.Spec.MinReplicas > fas.Spec.MaxReplicas {
 		causes = append(causes, metav1.StatusCause{
 			Type:    metav1.CauseTypeFieldValueInvalid,
 			Field:   "minReplicas",
@@ -94,7 +109,7 @@ func (fas *FleetAutoScaler) ValidateAutoScalingSettings(causes []metav1.StatusCa
 			Message: "BufferSize must be bigger than 0",
 		})
 	}
-	if fas.Spec.MaxReplicas != 0 && fas.Spec.MaxReplicas < fas.Spec.BufferSize {
+	if fas.Spec.MaxReplicas < fas.Spec.BufferSize {
 		causes = append(causes, metav1.StatusCause{
 			Type:    metav1.CauseTypeFieldValueInvalid,
 			Field:   "maxReplicas",
