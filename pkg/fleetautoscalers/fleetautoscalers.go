@@ -21,15 +21,18 @@ import (
 )
 
 // computeDesiredFleetSize computes the new desired size of the given fleet
-func computeDesiredFleetSize(fas *stablev1alpha1.FleetAutoScaler, f* stablev1alpha1.Fleet) int32 {
+func computeDesiredFleetSize(fas *stablev1alpha1.FleetAutoScaler, f *stablev1alpha1.Fleet) (int32, bool) {
 
 	replicas := f.Status.AllocatedReplicas + fas.Spec.BufferSize
+	limited := false
 	if fas.Spec.MinReplicas > 0 && replicas < fas.Spec.MinReplicas {
 		replicas = fas.Spec.MinReplicas
+		limited = true
 	}
 	if fas.Spec.MaxReplicas > 0 && replicas > fas.Spec.MaxReplicas {
 		replicas = fas.Spec.MaxReplicas
+		limited = true
 	}
-	
-	return replicas
+
+	return replicas, limited
 }

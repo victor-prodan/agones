@@ -39,6 +39,7 @@ spec:
           required:
             - fleetName
             - bufferSize
+            - maxReplicas
           properties:
             fleetName:
               type: string
@@ -47,10 +48,10 @@ spec:
               pattern: "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
             bufferSize:
               type: integer
-              minimum: 1 
+              minimum: 1
             minReplicas:
               type: integer
-              minimum: 0 
+              minimum: 0
             maxReplicas:
               type: integer
-              minimum: 0 
+              minimum: 1

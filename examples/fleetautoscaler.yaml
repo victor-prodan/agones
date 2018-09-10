@@ -35,5 +35,5 @@ spec:
   # if not specified, the actual minimum fleet size will be bufferSize
   minReplicas: 10
   # maximum fleet size that can be set by this FleetAutoScaler
-  # if not specified, it will scale infinitely
+  # required
   maxReplicas: 20

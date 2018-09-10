@@ -29,8 +29,9 @@ func TestFleetAutoScalerValidateupdate(t *testing.T) {
 		fas := &FleetAutoScaler{
 			ObjectMeta: metav1.ObjectMeta{Name: "test"},
 			Spec: FleetAutoScalerSpec{
-				FleetName: "testing",
-				BufferSize: 1,
+				FleetName:   "testing",
+				BufferSize:  1,
+				MaxReplicas: 10,
 			},
 		}
 
@@ -43,8 +44,9 @@ func TestFleetAutoScalerValidateupdate(t *testing.T) {
 		fas := &FleetAutoScaler{
 			ObjectMeta: metav1.ObjectMeta{Name: "test"},
 			Spec: FleetAutoScalerSpec{
-				FleetName: "testing",
-				BufferSize: 1,
+				FleetName:   "testing",
+				BufferSize:  1,
+				MaxReplicas: 10,
 			},
 		}
 		fasCopy := fas.DeepCopy()
@@ -55,14 +57,15 @@ func TestFleetAutoScalerValidateupdate(t *testing.T) {
 		assert.Len(t, causes, 1)
 		assert.Equal(t, "fleetName", causes[0].Field)
 	})
-	
+
 	t.Run("bad buffer size", func(t *testing.T) {
 
 		fas := &FleetAutoScaler{
 			ObjectMeta: metav1.ObjectMeta{Name: "test"},
 			Spec: FleetAutoScalerSpec{
-				FleetName: "testing",
-				BufferSize: 1,
+				FleetName:   "testing",
+				BufferSize:  1,
+				MaxReplicas: 10,
 			},
 		}
 
@@ -80,8 +83,9 @@ func TestFleetAutoScalerValidateupdate(t *testing.T) {
 		fas := &FleetAutoScaler{
 			ObjectMeta: metav1.ObjectMeta{Name: "test"},
 			Spec: FleetAutoScalerSpec{
-				FleetName: "testing",
-				BufferSize: 5,
+				FleetName:   "testing",
+				BufferSize:  5,
+				MaxReplicas: 10,
 			},
 		}
 
@@ -99,8 +103,9 @@ func TestFleetAutoScalerValidateupdate(t *testing.T) {
 		fas := &FleetAutoScaler{
 			ObjectMeta: metav1.ObjectMeta{Name: "test"},
 			Spec: FleetAutoScalerSpec{
-				FleetName: "testing",
-				BufferSize: 5,
+				FleetName:   "testing",
+				BufferSize:  5,
+				MaxReplicas: 10,
 			},
 		}
 
@@ -111,24 +116,24 @@ func TestFleetAutoScalerValidateupdate(t *testing.T) {
 		assert.Len(t, causes, 1)
 		assert.Equal(t, "maxReplicas", causes[0].Field)
 	})
-	
+
 	t.Run("minReplicas > maxReplicas", func(t *testing.T) {
 
 		fas := &FleetAutoScaler{
 			ObjectMeta: metav1.ObjectMeta{Name: "test"},
 			Spec: FleetAutoScalerSpec{
-				FleetName: "testing",
-				BufferSize: 5,
+				FleetName:   "testing",
+				BufferSize:  5,
+				MaxReplicas: 10,
 			},
 		}
 
 		fasCopy := fas.DeepCopy()
 		fasCopy.Spec.MinReplicas = 20
-		fasCopy.Spec.MaxReplicas = 10
 		causes := fas.ValidateUpdate(fasCopy, nil)
 
 		assert.Len(t, causes, 1)
 		assert.Equal(t, "minReplicas", causes[0].Field)
 	})
-	
+
 }

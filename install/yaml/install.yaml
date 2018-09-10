@@ -410,6 +410,7 @@ spec:
           required:
             - fleetName
             - bufferSize
+            - maxReplicas
           properties:
             fleetName:
               type: string
@@ -419,12 +420,13 @@ spec:
             bufferSize:
               type: integer
               minimum: 1 
+            maxReplicas:
+              type: integer
+              minimum: 1 
             minReplicas:
               type: integer
               minimum: 0 
-            maxReplicas:
-              type: integer
-              minimum: 0 
+
 ---
 # Source: agones/templates/crds/gameserver.yaml
 # Copyright 2018 Google Inc. All Rights Reserved.
