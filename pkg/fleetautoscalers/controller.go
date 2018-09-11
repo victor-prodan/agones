@@ -180,9 +180,9 @@ func (c *Controller) creationMutationHandler(review admv1beta1.AdmissionReview) 
 	ref := metav1.NewControllerRef(fleet, stablev1alpha1.SchemeGroupVersion.WithKind("Fleet"))
 	fas.ObjectMeta.OwnerReferences = append(fas.ObjectMeta.OwnerReferences, *ref)
 
-	// Q: can we do this nicer?
-	c.recorder.Eventf(fleet, corev1.EventTypeNormal, string("CreatingFleetAutoScaler"), "Attached FleetAutoScaler %s to fleet %s", fas.ObjectMeta.Name, fas.Spec.FleetName)
-	c.recorder.Eventf(fas, corev1.EventTypeNormal, string("CreatingFleetAutoScaler"), "Attached FleetAutoScaler %s to fleet %s", fas.ObjectMeta.Name, fas.Spec.FleetName)
+	// This event is relevant for both fleet and autoscaler, so we log it to both queues
+	c.recorder.Eventf(fleet, corev1.EventTypeNormal, "CreatingFleetAutoScaler", "Attached FleetAutoScaler %s to fleet %s", fas.ObjectMeta.Name, fas.Spec.FleetName)
+	c.recorder.Eventf(fas, corev1.EventTypeNormal, "CreatingFleetAutoScaler", "Attached FleetAutoScaler %s to fleet %s", fas.ObjectMeta.Name, fas.Spec.FleetName)
 
 	newFS, err := json.Marshal(fas)
 	if err != nil {
@@ -275,8 +275,13 @@ func (c *Controller) syncFleetAutoScaler(key string) error {
 				Warn("Could not find fleet for autoscaler. Skipping.")
 			return errors.Wrapf(err, "fleet %s not found in namespace %s", fas.Spec.FleetName, namespace)
 		}
-		c.updateStatusUnableToScale(fas)
-		return errors.Wrapf(err, "error retrieving fleet %s from namespace %s", fas.Spec.FleetName, namespace)
+		result := errors.Wrapf(err, "error retrieving fleet %s from namespace %s", fas.Spec.FleetName, namespace)
+		err := c.updateStatusUnableToScale(fas)
+		if err != nil {
+			c.logger.WithError(err).WithField("fleetAutoScalerName", fas.Name).
+				Error("Failed to update FleetAutoScaler status")
+		}
+		return result
 	}
 
 	currentReplicas := fleet.Status.Replicas
@@ -310,7 +315,6 @@ func (c *Controller) scaleFleet(fas *stablev1alpha1.FleetAutoScaler, f *stablev1
 
 // updateStatus updates the status of the given FleetAutoScaler
 func (c *Controller) updateStatus(fas *stablev1alpha1.FleetAutoScaler, currentReplicas int32, desiredReplicas int32, scaled bool, scalingLimited bool) error {
-	// Q: can we detect and update only when fleet data is changed?
 	fasCopy := fas.DeepCopy()
 	fasCopy.Status.AbleToScale = true
 	fasCopy.Status.ScalingLimited = scalingLimited
@@ -333,7 +337,6 @@ func (c *Controller) updateStatus(fas *stablev1alpha1.FleetAutoScaler, currentRe
 
 // updateStatus updates the status of the given FleetAutoScaler in the case we're not able to scale
 func (c *Controller) updateStatusUnableToScale(fas *stablev1alpha1.FleetAutoScaler) error {
-	// Q: can we detect and update only when fleet data is changed?
 	fasCopy := fas.DeepCopy()
 	fasCopy.Status.AbleToScale = false
 	fasCopy.Status.ScalingLimited = false

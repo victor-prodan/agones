@@ -66,7 +66,7 @@ type FleetAutoScalerStatus struct {
 
 	// DesiredReplicas is the desired number of gameserver replicas
 	// of the fleet managed by this autoscaler, as last calculated by the autoscaler
-	DesiredReplicas int32 `json:"currentReplicas"`
+	DesiredReplicas int32 `json:"desiredReplicas"`
 
 	// lastScaleTime is the last time the FleetAutoScaler scaled the attached fleet,
 	// +optional

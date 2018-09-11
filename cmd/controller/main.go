@@ -98,9 +98,9 @@ func main() {
 		kubeClient, extClient, agonesClient, agonesInformerFactory)
 	fleetController := fleets.NewController(wh, health,
 		kubeClient, extClient, agonesClient, agonesInformerFactory)
-	faController := fleetallocation.NewController(wh, 
+	faController := fleetallocation.NewController(wh,
 		kubeClient, extClient, agonesClient, agonesInformerFactory)
-	fasController := fleetautoscalers.NewController(wh, health, 
+	fasController := fleetautoscalers.NewController(wh, health,
 		kubeClient, extClient, agonesClient, agonesInformerFactory)
 
 	stop := signals.NewStopChannel()

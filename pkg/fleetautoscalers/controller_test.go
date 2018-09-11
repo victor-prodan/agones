@@ -117,6 +117,7 @@ func TestControllerMutationValidationHandler(t *testing.T) {
 	})
 }
 
+// nolint:dupl
 func TestControllerSyncFleetAutoScaler(t *testing.T) {
 	t.Parallel()
 

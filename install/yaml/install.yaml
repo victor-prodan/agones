@@ -390,7 +390,7 @@ metadata:
   labels:
     component: crd
     app: agones
-    chart: agones-0.4.0
+    chart: agones-0.5.0.rc
     release: agones-manual
     heritage: Tiller
 spec:
@@ -419,13 +419,13 @@ spec:
               pattern: "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
             bufferSize:
               type: integer
-              minimum: 1 
-            maxReplicas:
-              type: integer
-              minimum: 1 
+              minimum: 1
             minReplicas:
               type: integer
-              minimum: 0 
+              minimum: 0
+            maxReplicas:
+              type: integer
+              minimum: 1
 
 ---
 # Source: agones/templates/crds/gameserver.yaml
