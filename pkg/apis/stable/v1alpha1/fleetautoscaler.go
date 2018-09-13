@@ -49,7 +49,7 @@ type FleetAutoScalerSpec struct {
 	// MinReplicas is the minimum amount of replicas that the fleet must have
 	// If zero, it is ignored.
 	// If non zero, it must be smaller than MaxReplicas and bigger than BufferSize
-	MinReplicas int32 `json:"minReplicas,omitempty"`
+	MinReplicas int32 `json:"minReplicas"`
 
 	// BufferSize defines how many replicas the autoscaler tries to have ready all the time
 	// Must be bigger than 0
@@ -99,28 +99,28 @@ func (fas *FleetAutoScaler) ValidateAutoScalingSettings(causes []metav1.StatusCa
 		causes = append(causes, metav1.StatusCause{
 			Type:    metav1.CauseTypeFieldValueInvalid,
 			Field:   "minReplicas",
-			Message: "MinReplicas is bigger than MaxReplicas",
+			Message: "minReplicas is bigger than maxReplicas",
 		})
 	}
 	if fas.Spec.BufferSize <= 0 {
 		causes = append(causes, metav1.StatusCause{
 			Type:    metav1.CauseTypeFieldValueInvalid,
 			Field:   "bufferSize",
-			Message: "BufferSize must be bigger than 0",
+			Message: "bufferSize must be bigger than 0",
 		})
 	}
 	if fas.Spec.MaxReplicas < fas.Spec.BufferSize {
 		causes = append(causes, metav1.StatusCause{
 			Type:    metav1.CauseTypeFieldValueInvalid,
 			Field:   "maxReplicas",
-			Message: "MaxReplicas is smaller than BufferSize",
+			Message: "maxReplicas must be bigger than bufferSize",
 		})
 	}
 	if fas.Spec.MinReplicas != 0 && fas.Spec.MinReplicas < fas.Spec.BufferSize {
 		causes = append(causes, metav1.StatusCause{
 			Type:    metav1.CauseTypeFieldValueInvalid,
 			Field:   "minReplicas",
-			Message: "minReplicas is smaller than BufferSize",
+			Message: "minReplicas is smaller than bufferSize",
 		})
 	}
 	return causes

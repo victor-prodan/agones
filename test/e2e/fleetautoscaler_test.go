@@ -28,8 +28,8 @@ import (
 )
 
 func TestAutoScalerBasicFunctions(t *testing.T) {
-	t.Parallel()
-
+    t.Parallel()
+    
 	alpha1 := framework.AgonesClient.StableV1alpha1()
 	fleets := alpha1.Fleets(defaultNs)
 	flt, err := fleets.Create(defaultFleet())
@@ -50,6 +50,20 @@ func TestAutoScalerBasicFunctions(t *testing.T) {
     err = framework.WaitForFleetCondition(flt, e2e.FleetReadyCount(fas.Spec.BufferSize))
 	assert.Nil(t, err, "fleet did not sync with autoscaler")
 
+    // patch the autoscaler to increase MinReplicas and watch the fleet scale up
+    fas, err = patchFleetAutoScaler(fas, fas.Spec.BufferSize, fas.Spec.BufferSize + 2, fas.Spec.MaxReplicas)
+	assert.Nil(t, err, "could not patch fleetautoscaler")
+
+    err = framework.WaitForFleetCondition(flt, e2e.FleetReadyCount(fas.Spec.BufferSize + 2))
+	assert.Nil(t, err, "fleet did not sync with autoscaler")
+    
+    // patch the autoscaler to remove MinReplicas and watch the fleet scale down
+    fas, err = patchFleetAutoScaler(fas, fas.Spec.BufferSize, 0, fas.Spec.MaxReplicas)
+	assert.Nil(t, err, "could not patch fleetautoscaler")
+
+    err = framework.WaitForFleetCondition(flt, e2e.FleetReadyCount(fas.Spec.BufferSize))
+	assert.Nil(t, err, "fleet did not sync with autoscaler")
+
     // do an allocation and watch the fleet scale up
 	fa := getAllocation(flt)
 	fa, err = alpha1.FleetAllocations(defaultNs).Create(fa)
@@ -67,37 +81,21 @@ func TestAutoScalerBasicFunctions(t *testing.T) {
 	gp := int64(1)
 	err = alpha1.GameServers(defaultNs).Delete(fa.Status.GameServer.ObjectMeta.Name, &metav1.DeleteOptions{GracePeriodSeconds: &gp})
 	assert.Nil(t, err)
-	err = framework.WaitForFleetCondition(flt, e2e.FleetReadyCount(1))
-	assert.Nil(t, err)
-
 	err = framework.WaitForFleetCondition(flt, func(fleet *v1alpha1.Fleet) bool {
-		return fleet.Status.AllocatedReplicas == 0
+		return fleet.Status.AllocatedReplicas == 0 && fleet.Status.ReadyReplicas == fas.Spec.BufferSize && fleet.Status.Replicas == fas.Spec.BufferSize
 	})
 	assert.Nil(t, err)
 
     err = framework.WaitForFleetCondition(flt, e2e.FleetReadyCount(fas.Spec.BufferSize))
 	assert.Nil(t, err, "fleet did not sync with autoscaler")
-    
-    // patch the autoscaler to increase MinReplicas and watch the fleet scale up
-    fas, err = patchFleetAutoScaler(fas, fas.Spec.BufferSize, fas.Spec.BufferSize + 2, fas.Spec.MaxReplicas)
-	assert.Nil(t, err, "could not patch fleetautoscaler")
-
-    err = framework.WaitForFleetCondition(flt, e2e.FleetReadyCount(fas.Spec.MinReplicas))
-	assert.Nil(t, err, "fleet did not sync with autoscaler")
-    
-    // patch the autoscaler to decrease MaxReplicas and watch the fleet scale down
-    fas, err = patchFleetAutoScaler(fas, fas.Spec.BufferSize, 0, fas.Spec.BufferSize + 1)
-	assert.Nil(t, err, "could not patch fleetautoscaler")
-
-    err = framework.WaitForFleetCondition(flt, e2e.FleetReadyCount(fas.Spec.MaxReplicas))
-	assert.Nil(t, err, "fleet did not sync with autoscaler")
 }
 
 // TestAutoScalerStressCreate creates many fleetautoscalers with random values 
-// to check if the creation validation works as expected
+// to check if the creation validation works as expected and if the fleet scales
+// to the expected number of replicas (when the creation is valid)
 func TestAutoScalerStressCreate(t *testing.T) {
-	t.Parallel()
-
+    t.Parallel()
+    
 	alpha1 := framework.AgonesClient.StableV1alpha1()
 	fleets := alpha1.Fleets(defaultNs)
 	flt, err := fleets.Create(defaultFleet())
@@ -111,7 +109,7 @@ func TestAutoScalerStressCreate(t *testing.T) {
     r := rand.New(rand.NewSource(1783))
     
 	fleetautoscalers := alpha1.FleetAutoScalers(defaultNs)
-    for i := 0; i < 100; i++ {
+    for i := 0; i < 50; i++ {
         fas := defaultFleetAutoScaler(flt)
         fas.Spec.BufferSize = r.Int31n(10)
         fas.Spec.MinReplicas = r.Int31n(10)
@@ -120,11 +118,11 @@ func TestAutoScalerStressCreate(t *testing.T) {
         valid := fas.Spec.BufferSize > 0 &&
             fas.Spec.MaxReplicas > 0 &&
             fas.Spec.MaxReplicas >= fas.Spec.BufferSize &&
-            fas.Spec.MinReplicas < fas.Spec.MaxReplicas &&
+            fas.Spec.MinReplicas <= fas.Spec.MaxReplicas &&
             (fas.Spec.MinReplicas == 0 || fas.Spec.MinReplicas >= fas.Spec.BufferSize)
             
         fas, err := fleetautoscalers.Create(fas)
-        if assert.Nil(t, err) {
+        if err == nil {
             assert.True(t, valid, fmt.Sprintf("FleetAutoscaler created even if the parameters are NOT valid: %d %d %d", fas.Spec.BufferSize, fas.Spec.MinReplicas, fas.Spec.MaxReplicas))
             
             expectedReplicas := fas.Spec.BufferSize
@@ -134,7 +132,7 @@ func TestAutoScalerStressCreate(t *testing.T) {
             if expectedReplicas > fas.Spec.MaxReplicas {
                 expectedReplicas = fas.Spec.MaxReplicas
             }
-            // the fleet shouautoscaler should scale the fleet now to expectedReplicas
+            // the fleet autoscaler should scale the fleet now to expectedReplicas
             err = framework.WaitForFleetCondition(flt, e2e.FleetReadyCount(expectedReplicas))
             assert.Nil(t, err, fmt.Sprintf("fleet did not sync with autoscaler, expected %d ready replicas", expectedReplicas))
             
@@ -149,8 +147,8 @@ func TestAutoScalerStressCreate(t *testing.T) {
 // easier for testing, as it removes object generational issues.
 func patchFleetAutoScaler(fas *v1alpha1.FleetAutoScaler, bufferSize int32, minReplicas int32, maxReplicas int32) (*v1alpha1.FleetAutoScaler, error) {
 	patch := fmt.Sprintf(
-        `[{ "op": "replace", "path": "/spec/bufferSize", "value": %d }` + 
-        `{ "op": "replace", "path": "/spec/minReplicas", "value": %d }` +
+        `[{ "op": "replace", "path": "/spec/bufferSize", "value": %d },` + 
+        `{ "op": "replace", "path": "/spec/minReplicas", "value": %d },` +
         `{ "op": "replace", "path": "/spec/maxReplicas", "value": %d }]`,
         bufferSize, minReplicas, maxReplicas)
 	logrus.
