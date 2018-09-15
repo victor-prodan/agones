@@ -498,25 +498,25 @@ func (c *Controller) addGameServerHealthCheck(gs *v1alpha1.GameServer, pod *core
 	}
 }
 
-// applyGameServerAddressAndPortIfNeeded calls applyGameServerAddressAndPort if 
+// applyGameServerAddressAndPortIfNeeded calls applyGameServerAddressAndPort if
 // the address and port is not already applied in game server status
 // NOTE THIS IS NOT PART OF AUTO SCALER
-func (c *Controller) applyGameServerAddressAndPortIfNeeded(gs *v1alpha1.GameServer) (*v1alpha1.GameServer, error, bool) {
-    if gs.Status.Address == "" {
-        pod, err := c.gameServerPod(gs)
-        if err != nil {
-            return gs, err, false
-        }
-        
-        gs, err = c.applyGameServerAddressAndPort(gs, pod)
-        if err != nil {
-            return gs, err, false
-        }
-        
-        return gs, nil, true
-    }
+func (c *Controller) applyGameServerAddressAndPortIfNeeded(gs *v1alpha1.GameServer) (*v1alpha1.GameServer, bool, error) {
+	if gs.Status.Address == "" {
+		pod, err := c.gameServerPod(gs)
+		if err != nil {
+			return gs, false, err
+		}
 
-	return gs, nil, false
+		gs, err = c.applyGameServerAddressAndPort(gs, pod)
+		if err != nil {
+			return gs, false, err
+		}
+
+		return gs, true, nil
+	}
+
+	return gs, false, nil
 }
 
 // applyGameServerAddressAndPort gets the backing Pod for the GamesServer,
@@ -553,22 +553,22 @@ func (c *Controller) syncGameServerRequestReadyState(gs *v1alpha1.GameServer) (*
 	gsCopy := gs.DeepCopy()
 	gsCopy.Status.State = v1alpha1.Ready
 
-    // NOTE THIS IS NOT PART OF AUTO SCALER
-    // Populate the Status.Address if not done already when processing Creating state
-    // This might happen is the pod takes a while to be assigned to a node for various reasons (capacity, load)
-    gsCopy, err, populated := c.applyGameServerAddressAndPortIfNeeded(gsCopy)
-    if err != nil {
-        c.logger.WithError(err).WithField("gs", gs).Info("Failed to populate game server address and port when setting Ready state")
-    }
-    
+	// NOTE THIS IS NOT PART OF AUTO SCALER
+	// Populate the Status.Address if not done already when processing Creating state
+	// This might happen is the pod takes a while to be assigned to a node for various reasons (capacity, load)
+	gsCopy, populated, err := c.applyGameServerAddressAndPortIfNeeded(gsCopy)
+	if err != nil {
+		c.logger.WithError(err).WithField("gs", gs).Info("Failed to populate game server address and port when setting Ready state")
+	}
+
 	gs, err = c.gameServerGetter.GameServers(gs.ObjectMeta.Namespace).Update(gsCopy)
 	if err != nil {
 		return gs, errors.Wrapf(err, "error setting Ready, Port and address on GameServer %s Status", gs.ObjectMeta.Name)
 	}
 
-    if populated {
-        c.recorder.Event(gs, corev1.EventTypeNormal, string(gs.Status.State), "Address and port populated when setting Ready state")
-    }
+	if populated {
+		c.recorder.Event(gs, corev1.EventTypeNormal, string(gs.Status.State), "Address and port populated when setting Ready state")
+	}
 	c.recorder.Event(gs, corev1.EventTypeNormal, string(gs.Status.State), "SDK.Ready() executed")
 	return gs, nil
 }
