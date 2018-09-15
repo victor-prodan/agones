@@ -109,7 +109,7 @@ func TestAutoScalerStressCreate(t *testing.T) {
 	r := rand.New(rand.NewSource(1783))
 
 	fleetautoscalers := alpha1.FleetAutoScalers(defaultNs)
-	for i := 0; i < 50; i++ {
+	for i := 0; i < 30; i++ {
 		fas := defaultFleetAutoScaler(flt)
 		fas.Spec.BufferSize = r.Int31n(10)
 		fas.Spec.MinReplicas = r.Int31n(10)
