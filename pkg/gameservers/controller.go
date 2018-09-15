@@ -500,6 +500,7 @@ func (c *Controller) addGameServerHealthCheck(gs *v1alpha1.GameServer, pod *core
 
 // applyGameServerAddressAndPortIfNeeded calls applyGameServerAddressAndPort if 
 // the address and port is not already applied in game server status
+// NOTE THIS IS NOT PART OF AUTO SCALER
 func (c *Controller) applyGameServerAddressAndPortIfNeeded(gs *v1alpha1.GameServer) (*v1alpha1.GameServer, error, bool) {
     if gs.Status.Address == "" {
         pod, err := c.gameServerPod(gs)
@@ -552,6 +553,7 @@ func (c *Controller) syncGameServerRequestReadyState(gs *v1alpha1.GameServer) (*
 	gsCopy := gs.DeepCopy()
 	gsCopy.Status.State = v1alpha1.Ready
 
+    // NOTE THIS IS NOT PART OF AUTO SCALER
     // Populate the Status.Address if not done already when processing Creating state
     // This might happen is the pod takes a while to be assigned to a node for various reasons (capacity, load)
     gsCopy, err, populated := c.applyGameServerAddressAndPortIfNeeded(gsCopy)
