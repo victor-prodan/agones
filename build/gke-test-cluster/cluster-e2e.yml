@@ -22,7 +22,7 @@ resources:
       initialClusterVersion: 1.10.5-gke.0
       nodePools:
         - name: "default"
-          initialNodeCount: 2
+          initialNodeCount: 4
           config:
             machineType: n1-standard-1
             tags:
