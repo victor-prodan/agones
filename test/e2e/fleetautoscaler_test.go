@@ -28,7 +28,7 @@ import (
 )
 
 func TestAutoScalerBasicFunctions(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 
 	alpha1 := framework.AgonesClient.StableV1alpha1()
 	fleets := alpha1.Fleets(defaultNs)
@@ -94,7 +94,7 @@ func TestAutoScalerBasicFunctions(t *testing.T) {
 // to check if the creation validation works as expected and if the fleet scales
 // to the expected number of replicas (when the creation is valid)
 func TestAutoScalerStressCreate(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 
 	alpha1 := framework.AgonesClient.StableV1alpha1()
 	fleets := alpha1.Fleets(defaultNs)
