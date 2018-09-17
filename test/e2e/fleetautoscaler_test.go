@@ -28,7 +28,7 @@ import (
 )
 
 func TestAutoScalerBasicFunctions(t *testing.T) {
-	//t.Parallel()
+	t.Parallel()
 
 	alpha1 := framework.AgonesClient.StableV1alpha1()
 	fleets := alpha1.Fleets(defaultNs)
