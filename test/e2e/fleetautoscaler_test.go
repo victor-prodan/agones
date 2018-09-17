@@ -38,7 +38,13 @@ func TestAutoScalerBasicFunctions(t *testing.T) {
 	}
 
 	err = framework.WaitForFleetCondition(flt, e2e.FleetReadyCount(flt.Spec.Replicas))
-	assert.Nil(t, err, "fleet not ready")
+	if !assert.Nil(t, err, "fleet not ready") {
+		// add additional details to understand what went wrong
+		flt, _ = fleets.Get(flt.ObjectMeta.Name, metav1.GetOptions{})
+		logrus.Error(fmt.Sprintf("TestAutoScalerBasicFunctions - fleet not ready, will abort. Ready replicas %d/%d, total replicas %d/%d", flt.Status.ReadyReplicas, flt.Spec.Replicas, flt.Status.Replicas, flt.Spec.Replicas))
+		// if fleet is not ready we can't continue
+		return
+	}
 
 	fleetautoscalers := alpha1.FleetAutoScalers(defaultNs)
 	fas, err := fleetautoscalers.Create(defaultFleetAutoScaler(flt))
@@ -67,7 +73,10 @@ func TestAutoScalerBasicFunctions(t *testing.T) {
 	// do an allocation and watch the fleet scale up
 	fa := getAllocation(flt)
 	fa, err = alpha1.FleetAllocations(defaultNs).Create(fa)
-	assert.Nil(t, err)
+	if !assert.Nil(t, err, "TestAutoScalerBasicFunctions - could not allocate a game server, will abort") {
+		return
+	}
+
 	assert.Equal(t, v1alpha1.Allocated, fa.Status.GameServer.Status.State)
 	err = framework.WaitForFleetCondition(flt, func(fleet *v1alpha1.Fleet) bool {
 		return fleet.Status.AllocatedReplicas == 1
