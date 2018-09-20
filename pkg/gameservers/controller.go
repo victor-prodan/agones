@@ -498,6 +498,27 @@ func (c *Controller) addGameServerHealthCheck(gs *v1alpha1.GameServer, pod *core
 	}
 }
 
+// applyGameServerAddressAndPortIfNeeded calls applyGameServerAddressAndPort if
+// the address and port is not already applied in game server status
+// NOTE THIS IS NOT PART OF AUTO SCALER
+func (c *Controller) applyGameServerAddressAndPortIfNeeded(gs *v1alpha1.GameServer) (*v1alpha1.GameServer, bool, error) {
+	if gs.Status.Address == "" {
+		pod, err := c.gameServerPod(gs)
+		if err != nil {
+			return gs, false, err
+		}
+
+		gs, err = c.applyGameServerAddressAndPort(gs, pod)
+		if err != nil {
+			return gs, false, err
+		}
+
+		return gs, true, nil
+	}
+
+	return gs, false, nil
+}
+
 // applyGameServerAddressAndPort gets the backing Pod for the GamesServer,
 // and sets the allocated Address and Port values to it and returns it.
 func (c *Controller) applyGameServerAddressAndPort(gs *v1alpha1.GameServer, pod *corev1.Pod) (*v1alpha1.GameServer, error) {
@@ -531,11 +552,23 @@ func (c *Controller) syncGameServerRequestReadyState(gs *v1alpha1.GameServer) (*
 
 	gsCopy := gs.DeepCopy()
 	gsCopy.Status.State = v1alpha1.Ready
-	gs, err := c.gameServerGetter.GameServers(gs.ObjectMeta.Namespace).Update(gsCopy)
+
+	// NOTE THIS IS NOT PART OF AUTO SCALER
+	// Populate the Status.Address if not done already when processing Creating state
+	// This might happen is the pod takes a while to be assigned to a node for various reasons (capacity, load)
+	gsCopy, populated, err := c.applyGameServerAddressAndPortIfNeeded(gsCopy)
+	if err != nil {
+		c.logger.WithError(err).WithField("gs", gs).Info("Failed to populate game server address and port when setting Ready state")
+	}
+
+	gs, err = c.gameServerGetter.GameServers(gs.ObjectMeta.Namespace).Update(gsCopy)
 	if err != nil {
 		return gs, errors.Wrapf(err, "error setting Ready, Port and address on GameServer %s Status", gs.ObjectMeta.Name)
 	}
 
+	if populated {
+		c.recorder.Event(gs, corev1.EventTypeNormal, string(gs.Status.State), "Address and port populated when setting Ready state")
+	}
 	c.recorder.Event(gs, corev1.EventTypeNormal, string(gs.Status.State), "SDK.Ready() executed")
 	return gs, nil
 }
